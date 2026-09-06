@@ -1,0 +1,22 @@
+[package]
+name = "json"
+version = "0.1.0"
+edition = "2024"
+description = "Borrowing JSON deserialization over Breeze segmented readers"
+
+[lib]
+name = "brz_json"
+
+[dependencies]
+brz-io = { version = "0.0.2", default-features = false }
+serde = "1"
+serde_json = "1"
+
+[dev-dependencies]
+brz-ds = { package = "brz-ds", version = "0.0.2", default-features = false }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
