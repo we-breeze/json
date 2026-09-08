@@ -1,16 +1,16 @@
-# json
+# brz-json
 
-基于 `brz-io::Reader` 的 JSON 反序列化器。包名为 `json`，依赖别名 `brz-json`，
+基于 `brz-io::Reader` 的 JSON 反序列化器。包名为 `brz-json`，依赖别名 `brz-json`，
 Rust 中使用 `brz_json`。通过 `&JsonReader` 实现 `serde::Deserializer<'de>`，业务
 struct 继续使用 `#[derive(Deserialize)]`，包括 `name: &'a str` 这样的借用字段。
 
 ## 使用
 
-本地开发时使用同级项目：
+首次发布成功后，从 crates.io 引入：
 
 ```toml
 [dependencies]
-brz-json = { package = "json", git = "https://github.com/we-breeze/json.git", tag = "v0.0.1" }
+brz-json = "0.0.2"
 brz-io = "0.0.2"
 brz-ds = { package = "brz-ds", version = "0.0.2", default-features = false }
 serde = { version = "1", features = ["derive"] }
@@ -69,7 +69,7 @@ Reader。JSON 解析是同步内存操作。保持 JsonReader 存活，解析后
 自定义 visitor 和 Serde 派生属性可能自行分配中间结构；这里保证的是解析器不引入
 统一的 Value 中间树。未知字段仍会被完整校验，其字符串可能经过相同的 arena 存储路径。
 
-本项目固定依赖 `io v0.0.1`。
+本项目使用 crates.io 的 `brz-io 0.0.2`，关闭其默认 Tokio 特性。
 HTTP server 的 API 宏直接使用此解析器。
 
 ## 验证
@@ -83,3 +83,42 @@ cargo clippy --all-targets -- -D warnings
 
 测试覆盖一字节分片、片内指针复用、跨片与转义字段同时借用、异步 handler 生命周期、
 代理对、嵌套结构、枚举、非法输入、深度限制，以及与 serde_json 的对照结果。
+
+## CI and publishing
+
+Pushes and pull requests run rustfmt, Clippy with warnings denied, integration
+and documentation tests, and the same tests in release mode. Cargo.lock is
+tracked. This crate has no feature variants or Loom models and forbids unsafe
+code.
+
+The default branch is `main`. Grant this public repository access to the
+`we-breeze` organization Actions secret `CARGO_REGISTRY_TOKEN`. The token must
+allow creating and publishing `brz-json`; repository rules must allow Actions
+to push version commits and create tags (`contents: write`).
+
+Use **Actions → Publish → Run workflow**, select `main`, and leave `retry_tag`
+empty. Publish increments the latest `v0.0.x` tag, updates Cargo.toml and
+Cargo.lock, runs checks and a publishing dry run, then atomically pushes the
+version commit and annotated tag before uploading to crates.io. The existing
+`v0.0.1` means the next release is `v0.0.2`, replacing the initial unpublished
+Cargo version `0.1.0`. Pushes and merges only run CI; publishing is manual.
+
+If upload fails after the tag is pushed, start a new run with `retry_tag` set
+to that existing tag. This field does not choose a new version. Check crates.io
+before retrying an upload timeout: published versions cannot be overwritten.
+Publishing is serialized and rejects stale checkouts. Source fixes require a
+new release. No GitHub Release is created.
+
+## Operational safety
+
+Bound untrusted input with `brz_io::Writer::with_limit` and an input byte limit.
+The default recursion limit is 128; increasing it for untrusted input can
+exhaust the thread stack. The limit does not cap document size, string length,
+array length, or allocations made by custom Serde visitors. Cross-segment and
+escaped strings, including ignored fields, can retain additional arena memory.
+Discard failed parsers and bound repeated parsing of the same borrowed reader.
+
+## License
+
+Licensed under either the MIT license or the Apache License, Version 2.0,
+at your option. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).

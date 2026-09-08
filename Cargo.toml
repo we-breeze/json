@@ -1,7 +1,10 @@
 [package]
-name = "json"
+name = "brz-json"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/we-breeze/json"
+readme = "README.md"
 description = "Borrowing JSON deserialization over Breeze segmented readers"
 
 [lib]
