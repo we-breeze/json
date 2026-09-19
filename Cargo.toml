@@ -21,5 +21,4 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 
 [lints.rust]
-unsafe_code = "forbid"
-
+unsafe_code = "deny"
