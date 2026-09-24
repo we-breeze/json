@@ -11,12 +11,12 @@ description = "Borrowing JSON deserialization over Breeze segmented readers"
 name = "brz_json"
 
 [dependencies]
-brz-io = { version = "0.0.2", default-features = false }
+brz-io = { version = "0.0.4", default-features = false }
 serde = "1"
 serde_json = "1"
 
 [dev-dependencies]
-brz-ds = { package = "brz-ds", version = "0.0.2", default-features = false }
+brz-ds = { package = "brz-ds", version = "0.0.4", default-features = false }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 
