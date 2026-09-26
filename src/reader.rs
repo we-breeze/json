@@ -1,3 +1,5 @@
+mod view;
+
 use std::cell::Cell;
 
 use brz_io::{Reader, ReaderView};
@@ -22,6 +24,10 @@ pub struct JsonReader<'a> {
 }
 
 #[derive(Debug)]
+// Keep owned readers inline: boxing this variant adds an allocation to every
+// owned JSON input. Borrowed HTTP inputs still carry only a view at runtime;
+// the enum's stack size is an explicit tradeoff for allocation-free ownership.
+#[allow(clippy::large_enum_variant)]
 enum Input<'a> {
     Owned(Reader),
     Borrowed(ReaderView<'a>),
