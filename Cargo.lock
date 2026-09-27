@@ -14,9 +14,9 @@ dependencies = [
 
 [[package]]
 name = "brz-io"
-version = "0.0.5"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19a29cf34ad05eb5eb11d3065c31a27e45697499ca50ed8307a31ef2509c0b1b"
+checksum = "5ce95cb60641fdf3e8884cba56854e6a6eb9db355dc0c7837ad12b94086dbd43"
 dependencies = [
  "brz-ds",
  "elsa",
