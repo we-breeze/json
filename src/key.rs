@@ -12,8 +12,8 @@ macro_rules! number {
                 return Err(de::Error::custom("whitespace in numeric or boolean object key"));
             }
             let mut parser = serde_json::Deserializer::from_str(self.0);
-            let value = parser.$method(visitor).map_err(de::Error::custom)?;
-            parser.end().map_err(de::Error::custom)?;
+            let value = parser.$method(visitor).map_err(<Error as de::Error>::custom)?;
+            parser.end().map_err(<Error as de::Error>::custom)?;
             Ok(value)
         }
     )*};

@@ -1,30 +1,28 @@
-//! Borrow JSON strings from segmented arena storage without an intermediate DOM.
-//!
-//! `&JsonReader` implements `serde::Deserializer<'de>`. Keep the reader alive
-//! for as long as deserialized fields are borrowed. A successful decode consumes
-//! input; use a new reader to parse the document again.
-//!
-//! ```
-//! use brz_ds::EphemeralBytesArena;
-//! use brz_io::Writer;
-//! use brz_json::JsonReader;
-//! use serde::Deserialize;
-//! use std::io::Write;
-//!
-//! #[derive(Deserialize)]
-//! struct User<'a> { name: &'a str }
-//! let arena = EphemeralBytesArena::new(1024);
-//! let mut writer = Writer::new(&arena);
-//! writer.write_all(br#"{"name":"a\u0062"}"#)?;
-//! let json = JsonReader::new(writer.into_reader());
-//! let user: User<'_> = json.decode()?;
-//! assert_eq!(user.name, "ab");
-//! # Ok::<(), Box<dyn std::error::Error>>(())
-//! ```
+#![doc = include_str!("../README.md")]
 
+pub mod adapters;
+mod codec;
 mod de;
+mod field;
 mod key;
+mod object;
+mod raw;
 mod reader;
+
+pub use brz_json_macros::model;
+pub use codec::{from_slice, from_str, from_value, to_string, to_value, to_vec, to_writer};
+pub use field::FieldState;
+pub use object::Object;
+pub use raw::{
+    JsonNull, JsonProjection, OpaqueJson, RawJson, RawValue, raw_json, raw_null, to_raw_value,
+};
+// Dynamic trees remain available for schema-free mutation boundaries.
+pub use serde_json::{Map, Number, Value, json};
+
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::field::Field;
+}
 
 pub use reader::JsonReader;
 
@@ -33,6 +31,7 @@ pub use reader::JsonReader;
 pub struct Error {
     message: String,
     offset: Option<usize>,
+    path: Option<String>,
 }
 
 impl Error {
@@ -40,12 +39,25 @@ impl Error {
         Self {
             message: message.into(),
             offset: Some(offset),
+            path: None,
         }
     }
 
     /// Position relative to the original IO reader, if known.
     pub fn byte_offset(&self) -> Option<usize> {
         self.offset
+    }
+
+    /// Typed field path, including array indices, when decoding a model.
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
+    }
+
+    pub(crate) fn with_path(mut self, path: String) -> Self {
+        if path != "." && !path.is_empty() {
+            self.path = Some(path);
+        }
+        self
     }
 
     pub(crate) fn with_offset(mut self, offset: usize) -> Self {
@@ -72,8 +84,19 @@ impl serde::de::Error for Error {
         Self {
             message: message.to_string(),
             offset: None,
+            path: None,
         }
     }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<serde_json::Error> for Error {
+    fn from(error: serde_json::Error) -> Self {
+        Self {
+            message: error.to_string(),
+            offset: None,
+            path: None,
+        }
+    }
+}

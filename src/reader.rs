@@ -1,3 +1,4 @@
+mod raw;
 mod view;
 
 use std::cell::Cell;
@@ -76,7 +77,13 @@ impl<'a> JsonReader<'a> {
     /// Decode exactly one JSON document and reject trailing non-whitespace.
     /// Errors can consume a prefix; discard the reader after a failed decode.
     pub fn decode<'de, T: Deserialize<'de>>(&'de self) -> Result<T> {
-        let value = T::deserialize(self).map_err(|error| error.with_offset(self.position()))?;
+        let value = serde_path_to_error::deserialize(self).map_err(|error| {
+            let path = error.path().to_string();
+            error
+                .into_inner()
+                .with_offset(self.position())
+                .with_path(path)
+        })?;
         self.end()?;
         Ok(value)
     }

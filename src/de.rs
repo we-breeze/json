@@ -136,6 +136,11 @@ impl<'de> Deserializer<'de> for &'de JsonReader<'de> {
         _name: &'static str,
         visitor: V,
     ) -> Result<V::Value> {
+        if _name == "$serde_json::private::RawValue" {
+            return visitor.visit_map(RawMap {
+                text: Some(self.raw_value()?),
+            });
+        }
         visitor.visit_newtype_struct(self)
     }
 
@@ -231,6 +236,31 @@ impl<'de> Deserializer<'de> for &'de JsonReader<'de> {
 struct Sequence<'de> {
     json: &'de JsonReader<'de>,
     first: bool,
+}
+
+// Adapter for the serde_json raw-value protocol. All unsafe representation
+// details remain inside serde_json; we provide a validated borrowed string.
+struct RawMap<'de> {
+    text: Option<&'de str>,
+}
+impl<'de> MapAccess<'de> for RawMap<'de> {
+    type Error = Error;
+    fn next_key_seed<K: DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>> {
+        if self.text.is_none() {
+            return Ok(None);
+        }
+        seed.deserialize(de::value::BorrowedStrDeserializer::new(
+            "$serde_json::private::RawValue",
+        ))
+        .map(Some)
+    }
+    fn next_value_seed<V: DeserializeSeed<'de>>(&mut self, seed: V) -> Result<V::Value> {
+        let text = self
+            .text
+            .take()
+            .ok_or_else(|| <Error as de::Error>::custom("raw value was already consumed"))?;
+        seed.deserialize(de::value::BorrowedStrDeserializer::new(text))
+    }
 }
 
 impl<'de> SeqAccess<'de> for Sequence<'de> {

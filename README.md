@@ -1,124 +1,125 @@
 # brz-json
 
-基于 `brz-io::Reader` 的 JSON 反序列化器。包名为 `brz-json`，依赖别名 `brz-json`，
-Rust 中使用 `brz_json`。通过 `&JsonReader` 实现 `serde::Deserializer<'de>`，业务
-struct 继续使用 `#[derive(Deserialize)]`，包括 `name: &'a str` 这样的借用字段。
-
-## 使用
-
-首次发布成功后，从 crates.io 引入：
+统一 JSON 编解码、字段状态和显式兼容策略。模型继续使用 Serde 的
+`Serialize` / `Deserialize`，业务代码通过 `brz_json` 使用 JSON 能力。
 
 ```toml
 [dependencies]
-brz-json = "0.0.2"
-brz-io = "0.0.2"
-brz-ds = { package = "brz-ds", version = "0.0.2", default-features = false }
+brz-json = "0.0.7"
 serde = { version = "1", features = ["derive"] }
 ```
 
+## 字段缺失与 null
+
+普通 `Option<T>` 合并缺失和 `null`。只有需要区分二者的更新请求或兼容模型使用宏：
+
 ```rust
-use brz_ds::EphemeralBytesArena;
-use brz_io::Writer;
+use brz_json::FieldState;
+use serde::{Deserialize, Serialize};
+
+#[brz_json::model]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Update {
+    #[json(presence)]
+    title: String,
+    // 只有历史协议允许错误类型时才开启 lenient。
+    #[json(presence, lenient)]
+    legacy_name: String,
+}
+
+let update: Update = brz_json::from_str(r#"{"title":null}"#)?;
+assert!(update.title.is_null());
+assert!(update.legacy_name.is_missing());
+assert_eq!(brz_json::to_string(&update)?, r#"{"title":null}"#);
+# Ok::<(), brz_json::Error>(())
+```
+
+业务只声明实际字段类型，不直接声明宏的内部 `Field<T>`。`FieldState` 提供
+`is_missing`、`is_null`、`is_present`、`value`、`into_value`。严格模式的非空错误类型
+报错；`lenient` 将其记为“已提供、非 null、没有有效值”。缺失字段序列化时省略，
+显式 null 保留。可用 `.into()`、`set`、`set_null`、`unset` 构造或更新字段。
+
+`#[brz_json::model]` 放在 derive 前面。普通结构体无需这个宏。
+`rename`、借用和泛型仍遵循 Serde 规则；presence 字段自动设置 missing 默认值和
+省略规则，不支持自定义 `default = ...` 或 `skip_serializing_if`。
+
+## 选择合适的 JSON 类型
+
+| 需求 | 类型 / 入口 |
+| --- | --- |
+| 已知结构 | `struct`、`from_str` / `from_slice`、`to_string` / `to_vec` / `to_writer` |
+| 原样透传，保留数字写法、空白、对象顺序 | `&RawJson` 或 `Box<RawJson>`、`to_raw_value` |
+| 历史 Value 解析校验、规范化后冻结 | `OpaqueJson`；`decode::<T>()` 严格投影，`project::<T>()` 容错投影 |
+| 需要容错的集合元素投影 | `JsonProjection<T>`；有效 JSON 不匹配 T 时 `value` 为 None |
+| 保持插入顺序的动态键对象 | `Object<T>`；重复键取最后值，位置保留首次出现的位置 |
+| 必须动态修改的无 schema 文档 | `Value`、`Map`、`json!`，限制在对应边界 |
+
+`OpaqueJson` 反序列化沿用 Value 的有限数值校验，例如拒绝 `1e400`；`RawJson`
+保留合法 JSON 数字文本，不要求转换成 f64。`OpaqueJson::from_json_text` 明确用于原始
+文本捕获；其内容未必能转换为 Value，调用 `to_value` 前须保证数值可表示。
+可失败的序列化使用 `try_from_serializable`，已知不会失败的负载可用 `from_serializable`。
+
+## 显式兼容策略
+
+使用 `#[serde(default, deserialize_with = "brz_json::adapters::...")]`。
+`default` 控制缺失，adapter 控制已提供的值，二者独立。
+
+- `null_as_default`：null 使用类型默认值，错误类型报错。
+- `try_decode` / `invalid_as_default`：完整消费有效 JSON 后容忍类型不匹配；语法错误仍报错。
+- `object` / `optional_object` / `optional_objects`：要求对象形状，拒绝 Serde 可能接受的位置数组。
+- `nonempty_string`：null 或空字符串为 None；`nonnull_items`：列表只过滤 null，其他错误元素报错。
+- `integer` / `number` / `boolean` 及对应 `optional_*`：显式字符串、布尔、数值转换。
+  `integer` 只接受整数浮点；`truncated_integer` 明确允许浮点截断。
+- `legacy_boolean`：历史响应策略，允许任意有符号整数、trim 后的布尔拼写和空字符串。
+  与严格限定 0/1 的 `boolean`、Python 的 `PythonTruthiness` / `python_truthy` 分开使用。
+
+业务枚举、默认值、权限、错误响应和特殊 Python 格式化留在业务项目。
+
+## 分片输入与借用
+
+`&JsonReader` 实现 `serde::Deserializer<'de>`。它直接构建目标类型，普通字符串
+可借用输入；跨片字符串和转义字符串保存在 Reader 的 arena 中。保持 Reader 存活，
+借用模型可以跨 await 使用。Reader 为 Send，非 Sync；失败后丢弃解析器。
+
+```rust
+use brz_io::{EphemeralBytesArena, Writer};
 use brz_json::JsonReader;
 use serde::Deserialize;
 use std::io::Write;
 
 #[derive(Deserialize)]
-struct Params<'a> {
-    name: &'a str,
-}
-
-let arena = EphemeralBytesArena::new(3); // Small chunks demonstrate cross-segment strings.
+struct Params<'a> { name: &'a str }
+let arena = EphemeralBytesArena::new(3);
 let mut writer = Writer::new(&arena);
 writer.write_all(br#"{"name":"a\u0062"}"#)?;
 let json = JsonReader::new(writer.into_reader());
 let params: Params<'_> = json.decode()?;
 assert_eq!(params.name, "ab");
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-流接收仍使用标准同步或 Tokio IO：先通过 `copy` 将有上限的输入写入 Writer，再转为
-Reader。JSON 解析是同步内存操作。保持 JsonReader 存活，解析后的借用 struct 就可以
-交给异步 handler，直到 handler 和借用返回值的序列化完成。
+`decode` 检查完整文档及尾部；逐值使用 `T::deserialize(&json)` 后调用 `end()`。
+已有 Reader 可用 `from_borrowed` 创建独立游标，不推进源 Reader。
+嵌套借用字段使用 `#[serde(borrow)]`。支持 RawJson 捕获，不支持 arbitrary_precision
+和非 UTF-8 字节扩展。容错 untagged adapter 和 OpaqueJson 可以分配中间结构。
 
-已有 Reader 可以通过 `JsonReader::from_borrowed(&reader)` 创建解析器。它对当前
-未读范围建立借用视图，拥有独立游标；解析不推进源 Reader，源 Reader 后续的共享
-读取也不改变该解析器的输入范围。适用于 HTTP body 解析后仍需访问原始字节的场景。
+错误提供 `path()`，分片解析提供可用的 `byte_offset()`。输入应限制总字节数；
+默认最大嵌套深度 128，可通过 `with_recursion_limit` 调整。
 
-## 存储与解析
-
-- 普通字符串在单片内：直接引用原始 payload。
-- 普通字符串跨片：Reader 只合并这个字符串的范围。
-- 带转义字符串：直接解码到 Reader 的 arena，支持标准转义和 Unicode 代理对。
-- 数组、对象等由 Serde visitor 直接构建目标类型，解析器不先构建 `serde_json::Value`。
-- 数字 token 的语法、范围和浮点转换委托给 serde_json，避免重复实现数值转换。
-
-字段名也会通过相同的字符串解析路径。所有共享读取产生的引用都由 Reader 保存，
-消费游标不会提前释放仍可能被借用的数据。JsonReader 是 Send，但不是 Sync，解析
-游标由一个调用者顺序使用。多个 handler 不应并发解析同一个 JsonReader。
-
-`decode` 读取一个完整文档并检查尾部。也可以使用 `T::deserialize(&json)` 逐个消费
-独立 JSON 值，再调用 `json.end()` 检查是否结束。解析会推进游标，失败可能已消费
-部分输入，失败后应丢弃该解析器。错误包含可用的原始输入字节偏移。
-
-默认最大嵌套深度为 128，可通过 `with_recursion_limit` 调整。支持常用 Serde 类型，
-包括借用字符串和字节、Option、数组/元组、struct、map、枚举及 Serde 的常用派生属性。
-嵌套借用字段仍按 Serde 规则使用 `#[serde(borrow)]`。
-
-这是独立反序列化器，不实现 serde_json 的私有 `RawValue` / `arbitrary_precision`
-协议。JSON 文本要求有效 UTF-8；不支持 serde_json 字节接口的非 UTF-8/WTF-8 扩展。
-自定义 visitor 和 Serde 派生属性可能自行分配中间结构；这里保证的是解析器不引入
-统一的 Value 中间树。未知字段仍会被完整校验，其字符串可能经过相同的 arena 存储路径。
-
-本项目使用 crates.io 的 `brz-io 0.0.2`，关闭其默认 Tokio 特性。
-HTTP server 的 API 宏直接使用此解析器。
-
-## 验证
+## 验证和发布
 
 ```sh
 cargo fmt --all -- --check
-cargo test --all-targets
-cargo test --doc
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo test --workspace --release
 ```
 
-测试覆盖一字节分片、片内指针复用、跨片与转义字段同时借用、异步 handler 生命周期、
-代理对、嵌套结构、枚举、非法输入、深度限制，以及与 serde_json 的对照结果。
-
-## CI and publishing
-
-Pushes and pull requests run rustfmt, Clippy with warnings denied, integration
-and documentation tests, and the same tests in release mode. Cargo.lock is
-tracked. This crate has no feature variants or Loom models and forbids unsafe
-code.
-
-The default branch is `main`. Grant this public repository access to the
-`we-breeze` organization Actions secret `CARGO_REGISTRY_TOKEN`. The token must
-allow creating and publishing `brz-json`; repository rules must allow Actions
-to push version commits and create tags (`contents: write`).
-
-Use **Actions → Publish → Run workflow**, select `main`, and leave `retry_tag`
-empty. Publish increments the latest `v0.0.x` tag, updates Cargo.toml and
-Cargo.lock, runs checks and a publishing dry run, then atomically pushes the
-version commit and annotated tag before uploading to crates.io. The existing
-`v0.0.1` means the next release is `v0.0.2`, replacing the initial unpublished
-Cargo version `0.1.0`. Pushes and merges only run CI; publishing is manual.
-
-If upload fails after the tag is pushed, start a new run with `retry_tag` set
-to that existing tag. This field does not choose a new version. Check crates.io
-before retrying an upload timeout: published versions cannot be overwritten.
-Publishing is serialized and rejects stale checkouts. Source fixes require a
-new release. No GitHub Release is created.
-
-## Operational safety
-
-Bound untrusted input with `brz_io::Writer::with_limit` and an input byte limit.
-The default recursion limit is 128; increasing it for untrusted input can
-exhaust the thread stack. The limit does not cap document size, string length,
-array length, or allocations made by custom Serde visitors. Cross-segment and
-escaped strings, including ignored fields, can retain additional arena memory.
-Discard failed parsers and bound repeated parsing of the same borrowed reader.
+GitHub Actions 的 Publish workflow 从 main 手动触发，递增 `v0.0.x`，同步两个包的版本，
+验证 workspace 后原子推送版本提交和 tag，依次发布 `brz-json-macros` 与 `brz-json`。
+发布凭据需要有两个包的发布权限。宏包先做 dry-run；主包在宏包发布后由 cargo publish
+校验打包结果。部分发布失败可用已有 `retry_tag` 重试，已发布包会跳过。
 
 ## License
 
-Licensed under either the MIT license or the Apache License, Version 2.0,
-at your option. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
+MIT OR Apache-2.0. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).

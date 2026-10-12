@@ -1,0 +1,19 @@
+[package]
+name = "brz-json-macros"
+version = "0.0.6"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Model declaration macros for brz-json"
+repository = "https://github.com/we-breeze/json"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
+proc-macro-crate = "3"
+
+[lints.rust]
+unsafe_code = "deny"

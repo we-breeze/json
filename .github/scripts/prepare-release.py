@@ -53,10 +53,15 @@ def main():
         if count != 1:
             raise SystemExit("Could not update package version")
         path.write_text(content)
-        subprocess.run(["cargo", "check"], check=True)
+        macros = Path("macros/Cargo.toml")
+        macros.write_text(re.sub(r'(?m)^version = "[^"]+"$',
+                                 f'version = "{tag[1:]}"', macros.read_text(), count=1))
+        path.write_text(re.sub(r'brz-json-macros = \{ version = "=[^"]+"',
+                               f'brz-json-macros = {{ version = "={tag[1:]}"', path.read_text()))
+        subprocess.run(["cargo", "check", "--workspace"], check=True)
         git("config", "user.name", "github-actions[bot]")
         git("config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com")
-        git("add", "Cargo.toml", "Cargo.lock")
+        git("add", "Cargo.toml", "macros/Cargo.toml", "Cargo.lock")
         git("commit", "-m", f"chore: release {tag}")
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         output.write(f"tag={tag}\n")
