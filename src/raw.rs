@@ -2,16 +2,13 @@ use crate::{Result, Value};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 
-/// Validated raw JSON. Borrow `&RawJson` or own `Box<RawJson>`; both serialize
-/// as a JSON value and preserve the original spelling instead of quoting it.
-pub use serde_json::value::RawValue;
-pub type RawJson = RawValue;
+use serde_json::value::RawValue;
 
-pub fn to_raw_value<T: ?Sized + Serialize>(value: &T) -> Result<Box<RawJson>> {
+pub fn to_raw_value<T: ?Sized + Serialize>(value: &T) -> Result<Box<RawValue>> {
     serde_json::value::to_raw_value(value).map_err(Into::into)
 }
 
-pub fn raw_json(value: &Value) -> Box<RawJson> {
+pub fn raw_json<T: ?Sized + Serialize>(value: &T) -> Box<RawValue> {
     to_raw_value(value).expect("JSON value serializes")
 }
 
@@ -19,15 +16,15 @@ pub fn raw_json(value: &Value) -> Box<RawJson> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JsonNull;
 
-pub fn raw_null() -> Box<RawJson> {
+pub fn raw_null() -> Box<RawValue> {
     to_raw_value(&JsonNull).expect("JSON null serializes")
 }
 
-/// Validated, normalized JSON at legacy boundaries. Unlike `RawJson`, decoding
+/// Validated, normalized JSON at legacy boundaries. Unlike `RawValue`, decoding
 /// retains Value's number validation and normalization before freezing it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(transparent)]
-pub struct OpaqueJson(Box<RawJson>);
+pub struct OpaqueJson(Box<RawValue>);
 
 impl<'de> Deserialize<'de> for OpaqueJson {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
@@ -50,9 +47,9 @@ impl OpaqueJson {
     }
     /// Capture valid raw text for later typed decoding, without normalization.
     pub fn from_json_text(text: &str) -> Option<Self> {
-        RawJson::from_string(text.to_owned()).ok().map(Self)
+        RawValue::from_string(text.to_owned()).ok().map(Self)
     }
-    pub fn as_raw(&self) -> &RawJson {
+    pub fn as_raw(&self) -> &RawValue {
         &self.0
     }
     pub fn is_null(&self) -> bool {
@@ -68,7 +65,7 @@ impl OpaqueJson {
     pub fn to_value(&self) -> Value {
         crate::from_str(self.0.get()).expect("opaque JSON is representable as a value")
     }
-    pub fn to_raw_value(&self) -> Box<RawJson> {
+    pub fn to_raw_value(&self) -> Box<RawValue> {
         self.0.clone()
     }
     pub fn is_nonempty_object(&self) -> bool {

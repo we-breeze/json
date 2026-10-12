@@ -13,11 +13,8 @@ pub use brz_json_macros::model;
 pub use codec::{from_slice, from_str, from_value, to_string, to_value, to_vec, to_writer};
 pub use field::FieldState;
 pub use object::Object;
-pub use raw::{
-    JsonNull, JsonProjection, OpaqueJson, RawJson, RawValue, raw_json, raw_null, to_raw_value,
-};
-// Dynamic trees remain available for schema-free mutation boundaries.
-pub use serde_json::{Map, Number, Value, json};
+pub use raw::{JsonNull, JsonProjection, OpaqueJson, raw_json, raw_null, to_raw_value};
+use serde_json::Value;
 
 #[doc(hidden)]
 pub mod __private {

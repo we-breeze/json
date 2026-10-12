@@ -27,7 +27,7 @@ impl JsonReader<'_> {
                 let number = self.number()?;
                 // Raw JSON preserves valid numeric spellings even when their
                 // magnitude cannot be represented by Value's finite f64.
-                serde_json::from_str::<&crate::RawJson>(number)
+                serde_json::from_str::<&serde_json::value::RawValue>(number)
                     .map(|_| ())
                     .map_err(|error| crate::Error::at(error.to_string(), start))
             }

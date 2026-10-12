@@ -1,5 +1,6 @@
-use brz_json::{FieldState, JsonReader, OpaqueJson, RawJson};
+use brz_json::{FieldState, JsonReader, OpaqueJson};
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use std::io::Write;
 
 fn segmented(raw: &str, size: usize) -> JsonReader<'static> {
@@ -27,17 +28,17 @@ fn model_fields_preserve_presence_and_serialize_missing_null_values() {
         for raw in ["{}", r#"{"title":null}"#, r#"{"title":"abc","progress":0}"#] {
             let reader = segmented(raw, size);
             let model: Update = reader.decode().unwrap();
-            let original: brz_json::Value = brz_json::from_str(raw).unwrap();
+            let original: serde_json::Value = brz_json::from_str(raw).unwrap();
             assert_eq!(model.title.is_missing(), original.get("title").is_none());
             assert_eq!(
                 model.title.is_null(),
-                original.get("title") == Some(&brz_json::Value::Null)
+                original.get("title") == Some(&serde_json::Value::Null)
             );
             let mut expected = original;
             expected
                 .as_object_mut()
                 .unwrap()
-                .insert("ordinary".into(), brz_json::Value::Null);
+                .insert("ordinary".into(), serde_json::Value::Null);
             assert_eq!(brz_json::to_value(&model).unwrap(), expected);
         }
     }
@@ -113,7 +114,7 @@ fn raw_json_preserves_exact_text_and_borrows_contiguous_input() {
     #[derive(Deserialize, Serialize)]
     struct Envelope<'a> {
         #[serde(borrow)]
-        payload: &'a RawJson,
+        payload: &'a RawValue,
         tail: u8,
     }
     let raw = r#"{"payload":{ "z": 1.00, "a":"\u0062", "x":1e400 },"tail":7}"#;
@@ -130,7 +131,7 @@ fn raw_json_preserves_exact_text_and_borrows_contiguous_input() {
             format!(r#"{{"payload":{},"tail":7}}"#, model.payload.get())
         );
         let reader = segmented(raw, size);
-        let owned: Box<RawJson> = reader.decode().unwrap();
+        let owned: Box<RawValue> = reader.decode().unwrap();
         assert_eq!(owned.get(), raw);
     }
     let arena = brz_io::EphemeralBytesArena::new(4096);
@@ -138,7 +139,7 @@ fn raw_json_preserves_exact_text_and_borrows_contiguous_input() {
     writer.write_all(b"PREFIX[1, 2]NEXT").unwrap();
     let reader = writer.into_reader();
     let json = JsonReader::from_view(reader.view().slice(6..12).unwrap());
-    let value: &RawJson = json.decode().unwrap();
+    let value: &RawValue = json.decode().unwrap();
     assert_eq!(value.get(), "[1, 2]");
     assert_eq!(
         value.get().as_ptr(),
@@ -160,17 +161,20 @@ fn raw_capture_rejects_bad_json_trailing_data_and_excess_depth() {
         "{1:2}",
         r#"{"a":tru}"#,
     ] {
-        assert!(segmented(raw, 1).decode::<Box<RawJson>>().is_err(), "{raw}");
+        assert!(
+            segmented(raw, 1).decode::<Box<RawValue>>().is_err(),
+            "{raw}"
+        );
     }
     let reader = segmented("[[[0]]]", 1);
     // The same recursion limit applies to raw capture and typed decoding.
-    let source = reader.decode::<Box<RawJson>>().unwrap();
+    let source = reader.decode::<Box<RawValue>>().unwrap();
     let arena = brz_io::EphemeralBytesArena::new(1);
     let mut writer = brz_io::Writer::new(&arena);
     writer.write_all(source.get().as_bytes()).unwrap();
     assert!(
         JsonReader::with_recursion_limit(writer.into_reader(), 2)
-            .decode::<Box<RawJson>>()
+            .decode::<Box<RawValue>>()
             .is_err()
     );
 }
@@ -196,7 +200,7 @@ fn opaque_json_retains_normalized_legacy_number_validation() {
             );
         }
     }
-    let value = OpaqueJson::from_serializable(brz_json::json!({"x": "abc"}));
+    let value = OpaqueJson::from_serializable(serde_json::json!({"x": "abc"}));
     #[derive(Deserialize)]
     struct View<'a> {
         x: &'a str,
