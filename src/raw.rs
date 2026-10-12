@@ -4,11 +4,57 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use serde_json::value::RawValue;
 
-pub fn to_raw_value<T: ?Sized + Serialize>(value: &T) -> Result<Box<RawValue>> {
-    serde_json::value::to_raw_value(value).map_err(Into::into)
+/// An owned, validated JSON fragment. Serialization emits the JSON itself,
+/// preserving its spelling rather than quoting it or building a dynamic tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RawJson(Box<RawValue>);
+
+impl RawJson {
+    pub fn from_string(text: String) -> Result<Self> {
+        RawValue::from_string(text).map(Self).map_err(Into::into)
+    }
+    pub fn get(&self) -> &str {
+        self.0.get()
+    }
+    pub fn is_null(&self) -> bool {
+        self.get() == "null"
+    }
+    pub fn decode<'de, T: Deserialize<'de>>(&'de self) -> Result<T> {
+        crate::from_str(self.get())
+    }
+    pub fn as_borrowed(&self) -> RawJsonRef<'_> {
+        RawJsonRef(&self.0)
+    }
 }
 
-pub fn raw_json<T: ?Sized + Serialize>(value: &T) -> Box<RawValue> {
+/// A validated JSON fragment borrowed from contiguous or segmented input.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RawJsonRef<'a>(#[serde(borrow)] &'a RawValue);
+
+impl<'a> RawJsonRef<'a> {
+    pub fn get(&self) -> &'a str {
+        self.0.get()
+    }
+    pub fn is_null(&self) -> bool {
+        self.get() == "null"
+    }
+    pub fn decode<T: Deserialize<'a>>(&self) -> Result<T> {
+        crate::from_str(self.get())
+    }
+    pub fn to_owned(&self) -> RawJson {
+        RawJson(self.0.to_owned())
+    }
+}
+
+pub fn to_raw_value<T: ?Sized + Serialize>(value: &T) -> Result<RawJson> {
+    serde_json::value::to_raw_value(value)
+        .map(RawJson)
+        .map_err(Into::into)
+}
+
+pub fn raw_json<T: ?Sized + Serialize>(value: &T) -> RawJson {
     to_raw_value(value).expect("JSON value serializes")
 }
 
@@ -16,7 +62,7 @@ pub fn raw_json<T: ?Sized + Serialize>(value: &T) -> Box<RawValue> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JsonNull;
 
-pub fn raw_null() -> Box<RawValue> {
+pub fn raw_null() -> RawJson {
     to_raw_value(&JsonNull).expect("JSON null serializes")
 }
 
@@ -24,7 +70,7 @@ pub fn raw_null() -> Box<RawValue> {
 /// retains Value's number validation and normalization before freezing it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(transparent)]
-pub struct OpaqueJson(Box<RawValue>);
+pub struct OpaqueJson(RawJson);
 
 impl<'de> Deserialize<'de> for OpaqueJson {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
@@ -47,9 +93,9 @@ impl OpaqueJson {
     }
     /// Capture valid raw text for later typed decoding, without normalization.
     pub fn from_json_text(text: &str) -> Option<Self> {
-        RawValue::from_string(text.to_owned()).ok().map(Self)
+        RawJson::from_string(text.to_owned()).ok().map(Self)
     }
-    pub fn as_raw(&self) -> &RawValue {
+    pub fn as_raw(&self) -> &RawJson {
         &self.0
     }
     pub fn is_null(&self) -> bool {
@@ -65,7 +111,7 @@ impl OpaqueJson {
     pub fn to_value(&self) -> Value {
         crate::from_str(self.0.get()).expect("opaque JSON is representable as a value")
     }
-    pub fn to_raw_value(&self) -> Box<RawValue> {
+    pub fn to_raw_value(&self) -> RawJson {
         self.0.clone()
     }
     pub fn is_nonempty_object(&self) -> bool {

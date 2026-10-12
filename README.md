@@ -5,7 +5,7 @@
 
 ```toml
 [dependencies]
-brz-json = "0.0.8"
+brz-json = "0.0.9"
 serde = { version = "1", features = ["derive"] }
 ```
 
@@ -48,20 +48,22 @@ assert_eq!(brz_json::to_string(&update)?, r#"{"title":null}"#);
 | 需求 | 类型 / 入口 |
 | --- | --- |
 | 已知结构 | `struct`、`from_str` / `from_slice`、`to_string` / `to_vec` / `to_writer` |
-| 原样透传，保留数字写法、空白、对象顺序 | `&serde_json::value::RawValue` 或 `Box<RawValue>`、`to_raw_value` |
+| 原样透传，保留数字写法、空白、对象顺序 | `RawJson` 或借用的 `RawJsonRef<'a>`、`to_raw_value` |
 | 历史 Value 解析校验、规范化后冻结 | `OpaqueJson`；`decode::<T>()` 严格投影，`project::<T>()` 容错投影 |
 | 需要容错的集合元素投影 | `JsonProjection<T>`；有效 JSON 不匹配 T 时 `value` 为 None |
 | 保持插入顺序的动态键对象 | `Object<T>`；重复键取最后值，位置保留首次出现的位置 |
 | 必须动态修改的无 schema 文档 | 按实际需求选择专用 API；存量代码的 `serde_json::Value` 限制在对应边界 |
 
-`OpaqueJson` 反序列化沿用 Value 的有限数值校验，例如拒绝 `1e400`；`RawValue`
+`OpaqueJson` 反序列化沿用 Value 的有限数值校验，例如拒绝 `1e400`；`RawJson`
 保留合法 JSON 数字文本，不要求转换成 f64。`OpaqueJson::from_json_text` 明确用于原始
 文本捕获；其内容未必能转换为 Value，调用 `to_value` 前须保证数值可表示。
 可失败的序列化使用 `try_from_serializable`，已知不会失败的负载可用 `from_serializable`。
 
 不重导出 `serde_json::Value`、`Map`、`Number`、`json!` 或 `RawValue`，
-也不为替换 import 新增同义包装。`JsonReader` 直接支持标准 `RawValue` 类型；
-只有需要原样捕获的边界才使用该类型。新能力按实际需求补充。
+也不为替换 import 新增同义包装。`RawJson` 是自己的校验与透传类型，
+可用 `from_string` 校验构造、`decode::<T>()` 类型投影、`get()` 读取原文；
+`RawJsonRef` 从 Reader 借用输入，`to_owned()` 转为独立持有的原始值。
+底层 `RawValue` 留在模块内部。新能力按实际需求补充。
 
 ## 显式兼容策略
 
@@ -104,7 +106,7 @@ assert_eq!(params.name, "ab");
 
 `decode` 检查完整文档及尾部；逐值使用 `T::deserialize(&json)` 后调用 `end()`。
 已有 Reader 可用 `from_borrowed` 创建独立游标，不推进源 Reader。
-嵌套借用字段使用 `#[serde(borrow)]`。支持 RawValue 捕获，不支持 arbitrary_precision
+嵌套借用字段使用 `#[serde(borrow)]`。支持原始 JSON 捕获，不支持 arbitrary_precision
 和非 UTF-8 字节扩展。容错 untagged adapter 和 OpaqueJson 可以分配中间结构。
 
 错误提供 `path()`，分片解析提供可用的 `byte_offset()`。输入应限制总字节数；
