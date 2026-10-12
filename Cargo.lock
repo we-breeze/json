@@ -24,7 +24,7 @@ dependencies = [
 
 [[package]]
 name = "brz-json"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "brz-ds",
  "brz-io",
@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "brz-json-macros"
-version = "0.0.6"
+version = "0.0.7"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
