@@ -5,7 +5,7 @@
 
 ```toml
 [dependencies]
-brz-json = "0.0.10"
+brz-json = "0.0.11"
 serde = { version = "1", features = ["derive"] }
 ```
 
