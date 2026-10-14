@@ -1,6 +1,6 @@
 [package]
 name = "brz-json"
-version = "0.0.9"
+version = "0.0.10"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/we-breeze/json"
@@ -15,14 +15,14 @@ resolver = "3"
 name = "brz_json"
 
 [dependencies]
-brz-io = { version = "0.0.6", default-features = false }
+brz-io = { version = "0.0.7", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value", "preserve_order"] }
 serde_path_to_error = "0.1"
-brz-json-macros = { version = "=0.0.9", path = "macros" }
+brz-json-macros = { version = "=0.0.10", path = "macros" }
 
 [dev-dependencies]
-brz-ds = { package = "brz-ds", version = "0.0.5", default-features = false }
+brz-ds = { package = "brz-ds", version = "0.0.6", default-features = false }
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt"] }
 
